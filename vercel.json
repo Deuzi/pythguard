@@ -1,0 +1,9 @@
+{
+  "framework": "nextjs",
+  "buildCommand": "next build",
+  "devCommand": "next dev",
+  "installCommand": "npm install",
+  "env": {
+    "NEXT_PUBLIC_PYTH_PRO_KEY": "lOgUpYBgJ6Zo5b8hEFECjiP0zsnE4HoS1CC-hackathon"
+  }
+}
