@@ -1,14 +1,11 @@
 import type { Asset, MacroFeed } from '@/types/index'
 
-// Replace with env var: process.env.NEXT_PUBLIC_PYTH_PRO_KEY
-export const PYTH_PRO_KEY = 'lOgUpYBgJ6Zo5b8hEFECjiP0zsnE4HoS1CC-hackathon'
+export const HERMES_URL   = process.env.NEXT_PUBLIC_PYTH_HERMES  || 'https://hermes.pyth.network'
+export const PYTH_PRO_URL = process.env.NEXT_PUBLIC_PYTH_PRO_URL || 'https://pyth-lazer.dourolabs.app'
 
-export const HERMES_URL   = 'https://hermes.pyth.network'
-export const PYTH_PRO_URL = 'https://pyth-lazer.dourolabs.app'
-
-// All hermesIds verified from https://pyth.dourolabs.app/v1/symbols
+// All hermesIds verified directly from Hermes /v2/price_feeds search
 export const ASSETS: Asset[] = [
-  // ── Crypto — Pyth Price Feeds ──────────────────────────────────
+  // ── Crypto ────────────────────────────────────────────────────
   {
     id: 'BTC', label: 'BTC/USD', type: 'crypto',
     hermesId: 'e62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43',
@@ -16,7 +13,6 @@ export const ASSETS: Asset[] = [
   },
   {
     id: 'ETH', label: 'ETH/USD', type: 'crypto',
-    // FIX: was c96458d3... (wrong) — correct ID below
     hermesId: 'ff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace',
     expo: -8, defaultEntry: 1820, defaultLiq: 1400, decimals: 2,
   },
@@ -50,32 +46,32 @@ export const ASSETS: Asset[] = [
     hermesId: '93da3352f9f1d105fdfe4971cfa80e9dd777bfc5d0f683ebb6e1294b92137bb7',
     expo: -8, defaultEntry: 28, defaultLiq: 18, decimals: 3,
   },
-  // ── Pyth Pro — Commodity ───────────────────────────────────────
+  // ── Commodities ───────────────────────────────────────────────
   {
     id: 'XAU', label: 'XAU/USD', type: 'pro-commodity',
     hermesId: '765d2ba906dbc32ca17cc11f5310a89e9ee1f6420508c63861f2f8ba4ee34bb2',
     expo: -5, defaultEntry: 3100, defaultLiq: 2900, decimals: 2,
   },
   {
+    // WTI continuous spot — verified: Commodities.USOILSPOT/USD
     id: 'WTI', label: 'WTI/USD', type: 'pro-commodity',
-    hermesId: '8392b84b64e2d3b26d4ad88f94c6d38c8e536476827af4f47b96f1ebf7ddce80',
+    hermesId: '925ca92ff005ae943c158e3563f59698ce7e75c5a8c8dd43303a0a154887b3e6',
     expo: -5, defaultEntry: 72, defaultLiq: 60, decimals: 2,
   },
-  // ── Pyth Pro — FX ─────────────────────────────────────────────
+  // ── FX ────────────────────────────────────────────────────────
   {
     id: 'EURUSD', label: 'EUR/USD', type: 'pro-fx',
     hermesId: 'a995d00bb36a63cef7fd2c287dc105fc8f3d93779f062f09551b0af3e81ec30b',
     expo: -9, defaultEntry: 1.08, defaultLiq: 1.02, decimals: 5,
   },
   {
+    // GBP/USD spot — verified: FX.GBP/USD
     id: 'GBPUSD', label: 'GBP/USD', type: 'pro-fx',
-    hermesId: '84c2dde9633d93d1619d6776b19a9bc0364068da431f2308debef7d7fe6a6a26',
+    hermesId: '84c2dde9633d93d1bcad84e7dc41c9d56578b7ec52fabedc1f335d673df0a7c1',
     expo: -9, defaultEntry: 1.29, defaultLiq: 1.22, decimals: 5,
   },
 ]
 
-// Macro feeds for the danger score panel — right sidebar
-// lazerFeedIds from https://pyth.dourolabs.app/v1/symbols (real IDs)
 export const MACRO_FEEDS: MacroFeed[] = [
   {
     id: 'XAU', label: 'XAU/USD', type: 'commodity', desc: 'Gold',
@@ -84,8 +80,9 @@ export const MACRO_FEEDS: MacroFeed[] = [
     bearish: true, expo: -5,
   },
   {
+    // WTI continuous spot — verified: Commodities.USOILSPOT/USD
     id: 'WTI', label: 'WTI/USD', type: 'commodity', desc: 'WTI Crude',
-    hermesId: '8392b84b64e2d3b26d4ad88f94c6d38c8e536476827af4f47b96f1ebf7ddce80',
+    hermesId: '925ca92ff005ae943c158e3563f59698ce7e75c5a8c8dd43303a0a154887b3e6',
     lazerFeedId: 2314,
     bearish: false, expo: -5,
   },
@@ -96,8 +93,9 @@ export const MACRO_FEEDS: MacroFeed[] = [
     bearish: false, expo: -9,
   },
   {
+    // GBP/USD spot — verified: FX.GBP/USD
     id: 'GBPUSD', label: 'GBP/USD', type: 'fx', desc: 'Pound',
-    hermesId: '84c2dde9633d93d1619d6776b19a9bc0364068da431f2308debef7d7fe6a6a26',
+    hermesId: '84c2dde9633d93d1bcad84e7dc41c9d56578b7ec52fabedc1f335d673df0a7c1',
     lazerFeedId: 333,
     bearish: false, expo: -9,
   },

@@ -5,28 +5,28 @@ import { fetchAllPrices, fetchMacroFeeds } from '@/lib/pyth'
 import { MACRO_FEEDS } from '@/lib/constants'
 import type { PriceFeed, MacroDataPoint, DangerScore } from '@/types/index'
 
-const CRYPTO_INTERVAL = 3000  // 3s
-const MACRO_INTERVAL = 6000   // 6s
-const RETRY_DELAY = 2000      // 2s retry on error
+const CRYPTO_INTERVAL = 3_000   // 3 s
+const MACRO_INTERVAL  = 8_000   // 8 s
+const RETRY_DELAY     = 3_000   // 3 s on error
 
 export interface PythPricesState {
-  prices: Map<string, PriceFeed>
-  macroData: MacroDataPoint[]
-  dangerScore: DangerScore
+  prices:       Map<string, PriceFeed>
+  macroData:    MacroDataPoint[]
+  dangerScore:  DangerScore
   sessionStart: Map<string, number>
-  lastUpdated: Date | null
-  connected: boolean
-  error: string | null
+  lastUpdated:  Date | null
+  connected:    boolean
+  error:        string | null
 }
 
 const INITIAL_STATE: PythPricesState = {
-  prices: new Map(),
-  macroData: [],
-  dangerScore: { score: 0, level: 'low', description: 'Connecting to Pyth...', feeds: [] },
+  prices:       new Map(),
+  macroData:    [],
+  dangerScore:  { score: 0, level: 'low', description: 'Connecting to Pyth...', feeds: [] },
   sessionStart: new Map(),
-  lastUpdated: null,
-  connected: false,
-  error: null,
+  lastUpdated:  null,
+  connected:    false,
+  error:        null,
 }
 
 function computeDanger(points: MacroDataPoint[]): DangerScore {
@@ -46,23 +46,21 @@ function computeDanger(points: MacroDataPoint[]): DangerScore {
 }
 
 export function usePythPrices(): PythPricesState {
-  const [state, setState] = useState<PythPricesState>(INITIAL_STATE)
-  const sessionStartRef = useRef<Map<string, number>>(new Map())
-  const macroStartRef = useRef<Map<string, number>>(new Map())
-  const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const [state, setState]       = useState<PythPricesState>(INITIAL_STATE)
+  const sessionStartRef         = useRef<Map<string, number>>(new Map())
+  const macroStartRef           = useRef<Map<string, number>>(new Map())
+  const retryTimeoutRef         = useRef<NodeJS.Timeout | null>(null)
+  const mountedRef              = useRef(true)
 
   const pollPrices = useCallback(async () => {
     try {
-      console.log('[usePythPrices] Polling prices...')
       const priceMap = await fetchAllPrices()
 
-      if (priceMap.size === 0) {
-        throw new Error('No prices received from Hermes')
-      }
+      if (!mountedRef.current) return
 
-      console.log('[usePythPrices] Got prices:', Array.from(priceMap.keys()))
+      if (priceMap.size === 0) throw new Error('Empty price response from Hermes')
 
-      // Initialize session start prices
+      // Capture session-start prices (once per session)
       priceMap.forEach((feed, id) => {
         if (!sessionStartRef.current.has(id)) {
           sessionStartRef.current.set(id, feed.price)
@@ -71,22 +69,18 @@ export function usePythPrices(): PythPricesState {
 
       setState(prev => ({
         ...prev,
-        prices: priceMap,
+        prices:       priceMap,
         sessionStart: new Map(sessionStartRef.current),
-        lastUpdated: new Date(),
-        connected: true,
-        error: null,
+        lastUpdated:  new Date(),
+        connected:    true,
+        error:        null,
       }))
     } catch (e) {
-      const errorMsg = e instanceof Error ? e.message : 'Feed error'
-      console.error('[usePythPrices] Price poll error:', errorMsg)
-      setState(prev => ({
-        ...prev,
-        connected: false,
-        error: errorMsg,
-      }))
+      if (!mountedRef.current) return
+      const msg = e instanceof Error ? e.message : String(e)
+      console.error('[usePythPrices] Price poll error:', msg)
+      setState(prev => ({ ...prev, connected: false, error: msg }))
 
-      // Schedule retry
       if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current)
       retryTimeoutRef.current = setTimeout(pollPrices, RETRY_DELAY)
     }
@@ -94,10 +88,10 @@ export function usePythPrices(): PythPricesState {
 
   const pollMacro = useCallback(async () => {
     try {
-      console.log('[usePythPrices] Polling macro...')
       const macroMap = await fetchMacroFeeds()
 
-      // Initialize macro start prices
+      if (!mountedRef.current) return
+
       macroMap.forEach((price, id) => {
         if (!macroStartRef.current.has(id)) {
           macroStartRef.current.set(id, price)
@@ -105,39 +99,36 @@ export function usePythPrices(): PythPricesState {
       })
 
       const points: MacroDataPoint[] = MACRO_FEEDS.map(feed => {
-        const price = macroMap.get(feed.id) ?? 0
+        const price      = macroMap.get(feed.id) ?? 0
         const startPrice = macroStartRef.current.get(feed.id) ?? price
-        const changePct = startPrice > 0 ? ((price - startPrice) / startPrice * 100) : 0
-        const isRisk = feed.bearish ? changePct > 0.04 : changePct < -0.04
+        const changePct  = startPrice > 0 ? ((price - startPrice) / startPrice * 100) : 0
+        const isRisk     = feed.bearish ? changePct > 0.04 : changePct < -0.04
         return { feedId: feed.id, price, startPrice, isRisk, changePct }
       })
 
-      console.log('[usePythPrices] Macro data:', points)
-
       setState(prev => ({
         ...prev,
-        macroData: points,
+        macroData:   points,
         dangerScore: computeDanger(points),
       }))
     } catch (e) {
       // Non-fatal — keep previous macro data
-      const errorMsg = e instanceof Error ? e.message : 'Macro error'
-      console.warn('[usePythPrices] Macro poll error (non-fatal):', errorMsg)
+      console.warn('[usePythPrices] Macro poll error (non-fatal):', e instanceof Error ? e.message : e)
     }
   }, [])
 
   useEffect(() => {
+    mountedRef.current = true
     console.log('[usePythPrices] Mounting — initial poll')
-    
-    // Kick off initial poll immediately
+
     pollPrices()
     pollMacro()
 
-    // Set up intervals
     const t1 = setInterval(pollPrices, CRYPTO_INTERVAL)
-    const t2 = setInterval(pollMacro, MACRO_INTERVAL)
+    const t2 = setInterval(pollMacro,  MACRO_INTERVAL)
 
     return () => {
+      mountedRef.current = false
       clearInterval(t1)
       clearInterval(t2)
       if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current)
