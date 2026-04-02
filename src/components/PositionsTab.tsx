@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { ASSETS } from '@/lib/constants'
 import { fmtPrice, fmtPct } from '@/lib/pyth'
 import type { Position, PositionHealth, PriceFeed } from '@/types/index'
@@ -29,36 +29,87 @@ function HealthBar({ pct, status }: { pct: number; status: PositionHealth['statu
 }
 
 export default function PositionsTab({ positions, getHealth, onAdd, onRemove, prices }: PositionsTabProps) {
-  const [assetId,    setAssetId]    = useState(ASSETS[0].id)
-  const [entryPrice, setEntryPrice] = useState('')
-  const [liqPrice,   setLiqPrice]   = useState('')
-  const [label,      setLabel]      = useState('')
-  const [adding,     setAdding]     = useState(false)
-  const [formError,  setFormError]  = useState('')
+  const [assetId,         setAssetId]         = useState(ASSETS[0].id)
+  const [entryPrice,      setEntryPrice]       = useState('')
+  const [liqPrice,        setLiqPrice]         = useState('')
+  const [label,           setLabel]            = useState('')
+  const [adding,          setAdding]           = useState(false)
+  const [formError,       setFormError]        = useState('')
+  const [entryEdited,     setEntryEdited]      = useState(false) // true = user typed, stop auto-fill
+  const liveTickRef = useRef<NodeJS.Timeout | null>(null)
 
   const selectedAsset = ASSETS.find(a => a.id === assetId)!
+
+  // Live price for the selected asset
+  const liveFeed = prices.get(assetId)
+  const livePrice = liveFeed?.price ?? 0
+
+  // Auto-fill entry price with live price every 2s — unless user has manually edited it
+  useEffect(() => {
+    if (!adding) return
+
+    function tick() {
+      if (!entryEdited && livePrice > 0) {
+        setEntryPrice(livePrice.toFixed(selectedAsset.decimals || 2))
+      }
+    }
+
+    tick() // immediate on open or asset change
+    liveTickRef.current = setInterval(tick, 2000)
+
+    return () => {
+      if (liveTickRef.current) clearInterval(liveTickRef.current)
+    }
+  }, [adding, assetId, entryEdited, livePrice, selectedAsset.decimals])
+
+  // When asset changes, reset edited flag so live price takes over again
+  function handleAssetChange(id: string) {
+    setAssetId(id)
+    setEntryEdited(false)
+    setLiqPrice('')
+    setFormError('')
+  }
+
+  // When user manually types in entry price field
+  function handleEntryChange(val: string) {
+    setEntryPrice(val)
+    setEntryEdited(true)
+  }
+
+  // Reset entry to live price
+  function resetEntryToLive() {
+    if (livePrice > 0) {
+      setEntryPrice(livePrice.toFixed(selectedAsset.decimals || 2))
+      setEntryEdited(false)
+    }
+  }
 
   function handleAdd() {
     const entry = parseFloat(entryPrice)
     const liq   = parseFloat(liqPrice)
-    if (!entry || !liq)       { setFormError('Enter entry and liquidation prices.'); return }
-    if (liq >= entry)         { setFormError('Liquidation price must be below entry price.'); return }
+    if (!entry || !liq)  { setFormError('Enter entry and liquidation prices.'); return }
+    if (liq >= entry)    { setFormError('Liquidation price must be below entry price.'); return }
     setFormError('')
     onAdd({ assetId, entryPrice: entry, liqPrice: liq, label: label || undefined })
     setEntryPrice('')
     setLiqPrice('')
     setLabel('')
     setAdding(false)
-    // Auto-fill defaults for next time
-    setEntryPrice(String(selectedAsset.defaultEntry))
-    setLiqPrice(String(selectedAsset.defaultLiq))
+    setEntryEdited(false)
   }
 
-  function handleAssetChange(id: string) {
-    setAssetId(id)
-    const a = ASSETS.find(a => a.id === id)!
-    setEntryPrice(String(a.defaultEntry))
-    setLiqPrice(String(a.defaultLiq))
+  function handleOpen() {
+    setAdding(true)
+    setEntryEdited(false)
+    setLiqPrice('')
+    setFormError('')
+  }
+
+  function handleCancel() {
+    setAdding(false)
+    setEntryEdited(false)
+    setFormError('')
+    if (liveTickRef.current) clearInterval(liveTickRef.current)
   }
 
   const statusLabel = (s: PositionHealth['status']) =>
@@ -80,42 +131,82 @@ export default function PositionsTab({ positions, getHealth, onAdd, onRemove, pr
             New position
           </p>
           <div className="grid grid-cols-2 gap-3 mb-3">
+
             {/* Asset selector */}
             <div className="col-span-2">
               <label className="font-mono text-[9px] tracking-[.14em] uppercase text-[#555] block mb-1.5">
                 Collateral asset
               </label>
               <div className="flex flex-wrap gap-1.5">
-                {ASSETS.map(a => (
-                  <button
-                    key={a.id}
-                    onClick={() => handleAssetChange(a.id)}
-                    className={`font-mono text-[10px] px-2.5 py-1 rounded border transition-all ${
-                      assetId === a.id
-                        ? 'bg-[#e8ff4a] text-[#080808] border-[#e8ff4a] font-bold'
-                        : 'bg-[#161616] text-[#555] border-[#2a2a2a] hover:text-[#f0f0f0]'
-                    }`}
-                  >
-                    {a.id}
-                    {a.type !== 'crypto' && (
-                      <span className="ml-1 text-[7px] opacity-60">pro</span>
-                    )}
-                  </button>
-                ))}
+                {ASSETS.map(a => {
+                  const feed = prices.get(a.id)
+                  return (
+                    <button
+                      key={a.id}
+                      onClick={() => handleAssetChange(a.id)}
+                      className={`font-mono text-[10px] px-2.5 py-1 rounded border transition-all ${
+                        assetId === a.id
+                          ? 'bg-[#e8ff4a] text-[#080808] border-[#e8ff4a] font-bold'
+                          : 'bg-[#161616] text-[#555] border-[#2a2a2a] hover:text-[#f0f0f0]'
+                      }`}
+                    >
+                      {a.id}
+                      {a.type !== 'crypto' && (
+                        <span className="ml-1 text-[7px] opacity-60">pro</span>
+                      )}
+                      {feed && (
+                        <span className={`ml-1 text-[7px] ${assetId === a.id ? 'opacity-60' : 'text-[#444]'}`}>
+                          {fmtPrice(feed.price, a.decimals)}
+                        </span>
+                      )}
+                    </button>
+                  )
+                })}
               </div>
             </div>
+
+            {/* Entry price — live auto-fill */}
             <div>
               <label className="font-mono text-[9px] tracking-[.14em] uppercase text-[#555] block mb-1.5">
                 Entry price (USD)
               </label>
-              <input
-                type="number"
-                value={entryPrice}
-                onChange={e => setEntryPrice(e.target.value)}
-                placeholder={String(selectedAsset.defaultEntry)}
-                className="w-full bg-[#161616] border border-[#2a2a2a] rounded-md px-3 py-2 text-[13px] font-medium text-[#f0f0f0] outline-none focus:border-[#e8ff4a] transition-colors"
-              />
+              <div className="relative">
+                <input
+                  type="number"
+                  value={entryPrice}
+                  onChange={e => handleEntryChange(e.target.value)}
+                  placeholder={livePrice > 0 ? livePrice.toFixed(selectedAsset.decimals || 2) : '—'}
+                  className="w-full bg-[#161616] border border-[#2a2a2a] rounded-md px-3 py-2 text-[13px] font-medium text-[#f0f0f0] outline-none focus:border-[#e8ff4a] transition-colors pr-14"
+                />
+                {/* Live indicator / reset button */}
+                {!entryEdited && livePrice > 0 ? (
+                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1 pointer-events-none">
+                    <span
+                      className="w-1 h-1 rounded-full bg-[#22c55e]"
+                      style={{ animation: 'pulse-dot 1.4s ease-in-out infinite' }}
+                    />
+                    <span className="font-mono text-[8px] text-[#22c55e]">live</span>
+                  </span>
+                ) : entryEdited ? (
+                  <button
+                    onClick={resetEntryToLive}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 font-mono text-[8px] text-[#555] hover:text-[#e8ff4a] transition-colors"
+                    title="Reset to live price"
+                  >
+                    ↺ live
+                  </button>
+                ) : null}
+              </div>
+              {livePrice > 0 && (
+                <p className="font-mono text-[8px] text-[#555] mt-1">
+                  {entryEdited
+                    ? `Live: ${fmtPrice(livePrice, selectedAsset.decimals)} — click ↺ to reset`
+                    : 'Auto-updating every 2s from Pyth'}
+                </p>
+              )}
             </div>
+
+            {/* Liquidation price */}
             <div>
               <label className="font-mono text-[9px] tracking-[.14em] uppercase text-[#555] block mb-1.5">
                 Liquidation price (USD)
@@ -124,10 +215,21 @@ export default function PositionsTab({ positions, getHealth, onAdd, onRemove, pr
                 type="number"
                 value={liqPrice}
                 onChange={e => setLiqPrice(e.target.value)}
-                placeholder={String(selectedAsset.defaultLiq)}
+                placeholder={
+                  livePrice > 0
+                    ? (livePrice * 0.85).toFixed(selectedAsset.decimals || 2)
+                    : String(selectedAsset.defaultLiq)
+                }
                 className="w-full bg-[#161616] border border-[#2a2a2a] rounded-md px-3 py-2 text-[13px] font-medium text-[#f0f0f0] outline-none focus:border-[#e8ff4a] transition-colors"
               />
+              {livePrice > 0 && (
+                <p className="font-mono text-[8px] text-[#555] mt-1">
+                  Placeholder = 15% below live price
+                </p>
+              )}
             </div>
+
+            {/* Label */}
             <div className="col-span-2">
               <label className="font-mono text-[9px] tracking-[.14em] uppercase text-[#555] block mb-1.5">
                 Label (optional)
@@ -141,9 +243,11 @@ export default function PositionsTab({ positions, getHealth, onAdd, onRemove, pr
               />
             </div>
           </div>
+
           {formError && (
             <p className="font-mono text-[10px] text-red-400 mb-3">{formError}</p>
           )}
+
           <div className="flex gap-2">
             <button
               onClick={handleAdd}
@@ -152,7 +256,7 @@ export default function PositionsTab({ positions, getHealth, onAdd, onRemove, pr
               Add position
             </button>
             <button
-              onClick={() => { setAdding(false); setFormError('') }}
+              onClick={handleCancel}
               className="text-[#555] text-[11px] tracking-[.1em] uppercase px-4 py-2 rounded-md border border-[#2a2a2a] hover:text-[#f0f0f0] transition-colors"
             >
               Cancel
@@ -161,11 +265,7 @@ export default function PositionsTab({ positions, getHealth, onAdd, onRemove, pr
         </div>
       ) : (
         <button
-          onClick={() => {
-            setAdding(true)
-            setEntryPrice(String(selectedAsset.defaultEntry))
-            setLiqPrice(String(selectedAsset.defaultLiq))
-          }}
+          onClick={handleOpen}
           className="w-full bg-[#0f0f0f] border border-dashed border-[#2a2a2a] rounded-xl py-3.5 text-[11px] font-mono tracking-[.1em] uppercase text-[#555] hover:text-[#f0f0f0] hover:border-[#555] transition-all"
         >
           + Add position
@@ -183,17 +283,16 @@ export default function PositionsTab({ positions, getHealth, onAdd, onRemove, pr
         const health = getHealth(pos)
         const asset  = ASSETS.find(a => a.id === pos.assetId)!
         const borderColor =
-          !health               ? 'border-[#1f1f1f]' :
-          health.status === 'liquidated' || health.status === 'danger' ? 'border-red-500/25' :
-          health.status === 'warn'       ? 'border-amber-500/25' : 'border-[#1f1f1f]'
+          !health                                                          ? 'border-[#1f1f1f]' :
+          health.status === 'liquidated' || health.status === 'danger'    ? 'border-red-500/25' :
+          health.status === 'warn'                                         ? 'border-amber-500/25'
+                                                                           : 'border-[#1f1f1f]'
 
         return (
           <div
             key={pos.id}
             className={`bg-[#0f0f0f] border rounded-xl p-5 transition-all ${borderColor} ${
-              health?.status === 'danger' || health?.status === 'liquidated'
-                ? 'animate-pulse-subtle'
-                : ''
+              health?.status === 'danger' || health?.status === 'liquidated' ? 'animate-pulse-subtle' : ''
             }`}
           >
             {/* Header */}
@@ -268,10 +367,7 @@ export default function PositionsTab({ positions, getHealth, onAdd, onRemove, pr
 
                 {/* Price bar */}
                 <div className="bg-[#161616] rounded-lg px-3 py-2.5">
-                  <HealthBar
-                    pct={health.distancePct * 4}
-                    status={health.status}
-                  />
+                  <HealthBar pct={health.distancePct * 4} status={health.status} />
                   <div className="flex justify-between mt-1.5">
                     <span className="font-mono text-[8px] text-[#555]">
                       Liq. {fmtPrice(pos.liqPrice, asset.decimals)}

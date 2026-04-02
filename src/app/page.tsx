@@ -17,7 +17,10 @@ export default function Home() {
 
   const { prices, macroData, dangerScore, sessionStart, connected, lastUpdated } = usePythPrices()
   const { positions, addPosition, removePosition, getHealth } = usePositions(prices, sessionStart)
-  const { alerts, triggered, addAlert, removeAlert, dismissTriggered } = useAlerts(prices)
+  const {
+    alerts, triggered, addAlert, removeAlert, dismissTriggered,
+    notifPermission, enableNotifications,
+  } = useAlerts(prices)
 
   const totalPositions = positions.length
   const dangerPositions = positions.filter(p => {
@@ -160,10 +163,12 @@ export default function Home() {
             <AlertsTab
               alerts={alerts}
               triggered={triggered}
-              onAdd={async (assetId, condition, threshold) => { await addAlert(assetId, condition, threshold); }}
+              onAdd={async (assetId, condition, threshold) => { await addAlert(assetId, condition, threshold) }}
               onRemove={removeAlert}
               onDismiss={dismissTriggered}
               prices={prices}
+              notifPermission={notifPermission}
+              enableNotifications={enableNotifications}
             />
           )}
         </div>

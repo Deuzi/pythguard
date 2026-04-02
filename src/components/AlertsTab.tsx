@@ -6,16 +6,19 @@ import { fmtPrice } from '@/lib/pyth'
 import type { PriceAlert, AlertCondition, PriceFeed } from '@/types/index'
 
 interface AlertsTabProps {
-  alerts:           PriceAlert[]
-  triggered:        PriceAlert[]
-  onAdd:            (assetId: string, condition: AlertCondition, threshold: number) => Promise<void>
-  onRemove:         (id: string) => void
-  onDismiss:        (id: string) => void
-  prices:           Map<string, PriceFeed>
+  alerts:              PriceAlert[]
+  triggered:           PriceAlert[]
+  onAdd:               (assetId: string, condition: AlertCondition, threshold: number) => Promise<void>
+  onRemove:            (id: string) => void
+  onDismiss:           (id: string) => void
+  prices:              Map<string, PriceFeed>
+  notifPermission:     NotificationPermission | 'unsupported'
+  enableNotifications: () => Promise<void>
 }
 
 export default function AlertsTab({
-  alerts, triggered, onAdd, onRemove, onDismiss, prices
+  alerts, triggered, onAdd, onRemove, onDismiss, prices,
+  notifPermission, enableNotifications,
 }: AlertsTabProps) {
   const [assetId,    setAssetId]    = useState(ASSETS[0].id)
   const [condition,  setCondition]  = useState<AlertCondition>('below')
@@ -38,11 +41,56 @@ export default function AlertsTab({
     setAdding(false)
   }
 
-  const activeAlerts    = alerts.filter(a => a.active)
-  const inactiveAlerts  = alerts.filter(a => !a.active)
+  const activeAlerts   = alerts.filter(a => a.active)
+  const inactiveAlerts = alerts.filter(a => !a.active)
 
   return (
     <div className="flex flex-col gap-6">
+
+      {/* Notification permission banner */}
+      {notifPermission === 'default' && (
+        <div className="flex items-center justify-between bg-[#e8ff4a]/5 border border-[#e8ff4a]/20 rounded-xl px-4 py-3">
+          <div className="flex items-center gap-2">
+            <span className="text-[14px]">🔔</span>
+            <div>
+              <p className="text-[11px] font-semibold text-[#e8ff4a]">Enable push notifications</p>
+              <p className="font-mono text-[9px] text-[#555] mt-0.5">
+                Get browser alerts the moment a price target is hit — even in another tab
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={enableNotifications}
+            className="font-mono text-[10px] font-bold tracking-[.08em] uppercase px-3 py-1.5 rounded-md bg-[#e8ff4a] text-[#080808] hover:opacity-85 transition-all ml-4 shrink-0"
+          >
+            Enable
+          </button>
+        </div>
+      )}
+
+      {notifPermission === 'denied' && (
+        <div className="flex items-center gap-3 bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl px-4 py-3">
+          <span className="text-[14px]">🔕</span>
+          <div>
+            <p className="text-[11px] font-semibold text-[#555]">Notifications blocked</p>
+            <p className="font-mono text-[9px] text-[#444] mt-0.5">
+              Allow notifications for this site in your browser settings to receive push alerts
+            </p>
+          </div>
+        </div>
+      )}
+
+      {notifPermission === 'granted' && alerts.some(a => a.active) && (
+        <div className="flex items-center gap-2 px-1">
+          <span
+            className="w-1.5 h-1.5 rounded-full bg-[#22c55e]"
+            style={{ animation: 'pulse-dot 1.4s ease-in-out infinite' }}
+          />
+          <p className="font-mono text-[9px] text-[#555]">
+            Push notifications active — you'll be alerted even in other tabs
+          </p>
+        </div>
+      )}
 
       {/* Triggered notifications */}
       {triggered.length > 0 && (
@@ -183,9 +231,9 @@ export default function AlertsTab({
           </p>
           <div className="flex flex-col gap-2">
             {activeAlerts.map(a => {
-              const asset      = ASSETS.find(x => x.id === a.assetId)!
-              const feed       = prices.get(a.assetId)
-              const distance   = feed
+              const asset       = ASSETS.find(x => x.id === a.assetId)!
+              const feed        = prices.get(a.assetId)
+              const distance    = feed
                 ? a.condition === 'below'
                   ? feed.price - a.thresholdPrice
                   : a.thresholdPrice - feed.price
@@ -195,10 +243,7 @@ export default function AlertsTab({
                 : null
 
               return (
-                <div
-                  key={a.id}
-                  className="bg-[#0f0f0f] border border-[#1f1f1f] rounded-xl p-4"
-                >
+                <div key={a.id} className="bg-[#0f0f0f] border border-[#1f1f1f] rounded-xl p-4">
                   <div className="flex items-start justify-between mb-3">
                     <div>
                       <p className="text-[12px] font-semibold">
@@ -208,6 +253,9 @@ export default function AlertsTab({
                       </p>
                       <p className="font-mono text-[9px] text-[#555] mt-0.5">
                         Set {new Date(a.createdAt).toLocaleString()}
+                        {notifPermission === 'granted' && (
+                          <span className="ml-2 text-[#22c55e]">· push on</span>
+                        )}
                       </p>
                     </div>
                     <button
